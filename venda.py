@@ -1,358 +1,345 @@
-import os
-import json
+import sqlite3
 from datetime import date
+from tkinter import *
+from tkinter import messagebox, ttk
 
-ARQUIVO_VENDAS = "vendas.json"
+#  BANCO DE DADOS
 
-class Venda:
-    def __init__(self, id, data, cliente, produto, quantidade, preco_unitario, pagamento):
-        self.id             = id
-        self.data           = data
-        self.cliente        = cliente
-        self.produto        = produto
-        self.quantidade     = int(quantidade)
-        self.preco_unitario = float(preco_unitario)
-        self.total          = self.quantidade * self.preco_unitario
-        self.pagamento      = pagamento
+DB = "db_sistema.db"
 
-    def recalcular_total(self):
-        self.total = self.quantidade * self.preco_unitario
+def conectar():
+    return sqlite3.connect(DB)
 
-    def to_dict(self):
-        return {
-            "id":             self.id,
-            "data":           self.data,
-            "cliente":        self.cliente,
-            "produto":        self.produto,
-            "quantidade":     self.quantidade,
-            "preco_unitario": self.preco_unitario,
-            "total":          self.total,
-            "pagamento":      self.pagamento,
-        }
-
-    @classmethod
-    def from_dict(cls, d):
-        return cls(
-            id            = d["id"],
-            data          = d["data"],
-            cliente       = d["cliente"],
-            produto       = d["produto"],
-            quantidade    = d["quantidade"],
-            preco_unitario= d["preco_unitario"],
-            pagamento     = d["pagamento"],
+def criar_tabela():
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS vendas (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            data            TEXT    NOT NULL,
+            cliente         TEXT    NOT NULL,
+            produto         TEXT    NOT NULL,
+            quantidade      INTEGER NOT NULL,
+            preco_unitario  REAL    NOT NULL,
+            total           REAL    NOT NULL,
+            pagamento       TEXT    NOT NULL
         )
+    """)
+    con.commit()
+    con.close()
 
-    def __str__(self):
-        total_fmt = formatar_moeda(self.total)
-        return (
-            f"ID: {self.id:<4} | Data: {self.data:<12} | Cliente: {self.cliente:<20} | "
-            f"Produto: {self.produto:<20} | Qtd: {self.quantidade:<6} | "
-            f"Total: {total_fmt:<14} | Pagamento: {self.pagamento}"
-        )
+def db_inserir(cliente, produto, quantidade, preco_unitario, pagamento):
+    hoje  = date.today().strftime("%d/%m/%Y")
+    total = quantidade * preco_unitario
+    con   = conectar()
+    cur   = con.cursor()
+    cur.execute(
+        "INSERT INTO vendas (data, cliente, produto, quantidade, preco_unitario, total, pagamento) VALUES (?,?,?,?,?,?,?)",
+        (hoje, cliente, produto, quantidade, preco_unitario, total, pagamento)
+    )
+    con.commit()
+    con.close()
 
-class RepositorioVendas:
-    def __init__(self, arquivo=ARQUIVO_VENDAS):
-        self.arquivo    = arquivo
-        self.vendas     = []
-        self._contador  = 0
-        self._carregar()
+def db_listar():
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("SELECT id, data, cliente, produto, quantidade, preco_unitario, total, pagamento FROM vendas ORDER BY id")
+    rows = cur.fetchall()
+    con.close()
+    return rows
 
-    def _carregar(self):
-        if not os.path.exists(self.arquivo):
-            return
+def db_buscar_por_id(id_venda):
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("SELECT id, data, cliente, produto, quantidade, preco_unitario, total, pagamento FROM vendas WHERE id=?", (id_venda,))
+    row = cur.fetchone()
+    con.close()
+    return row
+
+def db_alterar(id_venda, cliente, produto, quantidade, preco_unitario, pagamento):
+    total = quantidade * preco_unitario
+    con   = conectar()
+    cur   = con.cursor()
+    cur.execute("""
+        UPDATE vendas
+        SET cliente=?, produto=?, quantidade=?, preco_unitario=?, total=?, pagamento=?
+        WHERE id=?
+    """, (cliente, produto, quantidade, preco_unitario, total, pagamento, id_venda))
+    con.commit()
+    con.close()
+
+def db_excluir(id_venda):
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("DELETE FROM vendas WHERE id=?", (id_venda,))
+    con.commit()
+    con.close()
+
+def db_excluir_tudo():
+    con = conectar()
+    cur = con.cursor()
+    cur.execute("DELETE FROM vendas")
+    con.commit()
+    con.close()
+
+def db_buscar(campo, termo):
+    con = conectar()
+    cur = con.cursor()
+    cur.execute(
+        f"SELECT id, data, cliente, produto, quantidade, preco_unitario, total, pagamento FROM vendas WHERE {campo} LIKE ?",
+        (f"%{termo}%",)
+    )
+    rows = cur.fetchall()
+    con.close()
+    return rows
+
+#  TELA PRINCIPAL DE VENDAS
+
+def abrir_tela_venda(janela_pai):
+    criar_tabela()
+
+    tela = Toplevel(janela_pai)
+    tela.title("Gestão de Vendas")
+    tela.attributes("-fullscreen", True)
+    tela.configure(bg="#f0f0f0")
+
+    # Título
+    Label(tela, text="GESTÃO DE VENDAS", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=15)
+
+    # Tabela
+    frame_tabela = Frame(tela, bg="#f0f0f0")
+    frame_tabela.pack(fill=BOTH, expand=True, padx=20, pady=5)
+
+    colunas = ("ID", "Data", "Cliente", "Produto", "Qtd", "Preço Unit.", "Total", "Pagamento")
+    tabela = ttk.Treeview(frame_tabela, columns=colunas, show="headings", height=18)
+
+    larguras = [50, 100, 160, 160, 60, 110, 110, 130]
+    for col, larg in zip(colunas, larguras):
+        tabela.heading(col, text=col)
+        tabela.column(col, width=larg, anchor=CENTER)
+
+    scroll = Scrollbar(frame_tabela, orient=VERTICAL, command=tabela.yview)
+    tabela.configure(yscrollcommand=scroll.set)
+    tabela.pack(side=LEFT, fill=BOTH, expand=True)
+    scroll.pack(side=RIGHT, fill=Y)
+
+    def carregar_tabela(rows=None):
+        tabela.delete(*tabela.get_children())
+        dados = rows if rows is not None else db_listar()
+        for row in dados:
+            id_, data, cliente, produto, qtd, preco, total, pag = row
+            tabela.insert("", END, values=(
+                id_, data, cliente, produto, qtd,
+                f"R$ {preco:.2f}".replace(".", ","),
+                f"R$ {total:.2f}".replace(".", ","),
+                pag
+            ))
+
+    carregar_tabela()
+
+    # Botões
+    frame_btns = Frame(tela, bg="#f0f0f0")
+    frame_btns.pack(pady=10)
+
+    btn_cfg = {"font": ("Arial", 11), "width": 16, "pady": 5, "cursor": "hand2"}
+
+    Button(frame_btns, text="Inserir",       bg="#4CAF50", fg="white", command=lambda: tela_inserir(tela, carregar_tabela),          **btn_cfg).grid(row=0, column=0, padx=8)
+    Button(frame_btns, text="Atualizar",     bg="#2196F3", fg="white", command=lambda: carregar_tabela(),                            **btn_cfg).grid(row=0, column=1, padx=8)
+    Button(frame_btns, text="Consultar",     bg="#FF9800", fg="white", command=lambda: tela_consultar(tela, carregar_tabela),        **btn_cfg).grid(row=0, column=2, padx=8)
+    Button(frame_btns, text="Alterar",       bg="#9C27B0", fg="white", command=lambda: tela_alterar(tela, tabela, carregar_tabela),  **btn_cfg).grid(row=0, column=3, padx=8)
+    Button(frame_btns, text="Excluir",       bg="#f44336", fg="white", command=lambda: acao_excluir(tabela, carregar_tabela),        **btn_cfg).grid(row=0, column=4, padx=8)
+    Button(frame_btns, text="Excluir Tudo",  bg="#880000", fg="white", command=lambda: acao_excluir_tudo(carregar_tabela),           **btn_cfg).grid(row=0, column=5, padx=8)
+    Button(frame_btns, text="Voltar",        bg="#607D8B", fg="white", command=tela.destroy,                                         **btn_cfg).grid(row=0, column=6, padx=8)
+
+# Inserir 
+
+def tela_inserir(pai, carregar_tabela):
+    win = Toplevel(pai)
+    win.title("Inserir Venda")
+    win.geometry("420x380")
+    win.resizable(False, False)
+    win.configure(bg="#f0f0f0")
+    win.grab_set()
+
+    Label(win, text="Nova Venda", font=("Arial", 13, "bold"), bg="#f0f0f0").pack(pady=10)
+
+    frame = Frame(win, bg="#f0f0f0")
+    frame.pack(padx=30, pady=5, fill=X)
+
+    v_cliente  = StringVar()
+    v_produto  = StringVar()
+    v_qtd      = StringVar()
+    v_preco    = StringVar()
+    v_pag      = StringVar()
+
+    rotulos = ["Cliente", "Produto", "Quantidade", "Preco Unitario", "Pagamento"]
+    variaveis = [v_cliente, v_produto, v_qtd, v_preco, v_pag]
+
+    for i, (rot, var) in enumerate(zip(rotulos, variaveis)):
+        Label(frame, text=rot + ":", font=("Arial", 11), bg="#f0f0f0", anchor=W).grid(row=i, column=0, sticky=W, pady=4)
+        if rot == "Pagamento":
+            opcoes = ["Dinheiro", "Cartao Debito", "Cartao Credito", "Pix", "Boleto"]
+            cb = ttk.Combobox(frame, textvariable=var, values=opcoes, state="readonly", font=("Arial", 11), width=22)
+            cb.grid(row=i, column=1, sticky=W, pady=4)
+            cb.current(0)
+        else:
+            Entry(frame, textvariable=var, font=("Arial", 11), width=24).grid(row=i, column=1, sticky=W, pady=4)
+
+    def salvar():
+        cliente  = v_cliente.get().strip().title()
+        produto  = v_produto.get().strip().title()
+        pagamento = v_pag.get()
         try:
-            with open(self.arquivo, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-            self.vendas    = [Venda.from_dict(d) for d in dados.get("vendas", [])]
-            self._contador = dados.get("contador", 0)
-        except (json.JSONDecodeError, KeyError):
-            print(f"AVISO: arquivo '{self.arquivo}' corrompido — iniciando vazio.")
-            self.vendas    = []
-            self._contador = 0
+            qtd   = int(v_qtd.get())
+            preco = float(v_preco.get().replace(",", "."))
+        except ValueError:
+            messagebox.showerror("Erro", "Quantidade e preco devem ser numeros.", parent=win)
+            return
+        if not cliente or not produto:
+            messagebox.showerror("Erro", "Cliente e produto sao obrigatorios.", parent=win)
+            return
+        db_inserir(cliente, produto, qtd, preco, pagamento)
+        carregar_tabela()
+        messagebox.showinfo("Sucesso", "Venda registrada com sucesso!", parent=win)
+        win.destroy()
 
-    def _salvar(self):
-        dados = {
-            "contador": self._contador,
-            "vendas":   [v.to_dict() for v in self.vendas],
-        }
-        with open(self.arquivo, "w", encoding="utf-8") as f:
-            json.dump(dados, f, ensure_ascii=False, indent=2)
+    Button(win, text="Salvar", font=("Arial", 11), bg="#4CAF50", fg="white",
+           width=14, command=salvar).pack(pady=15)
 
-    def inserir(self, cliente, produto, quantidade, preco_unitario, pagamento):
-        hoje   = date.today().strftime("%d/%m/%Y")
-        venda  = Venda(self._contador, hoje, cliente, produto, quantidade, preco_unitario, pagamento)
-        self.vendas.append(venda)
-        self._contador += 1
-        self._salvar()
-        return venda
+# Alterar
 
-    def listar(self):
-        return list(self.vendas)
-
-    def buscar_por_id(self, id_venda):
-        for v in self.vendas:
-            if v.id == id_venda:
-                return v
-        return None
-
-    def alterar(self, id_venda, novo_cliente=None, novo_produto=None,
-                nova_quantidade=None, novo_preco=None, novo_pagamento=None):
-        v = self.buscar_por_id(id_venda)
-        if v is None:
-            return None
-        if novo_cliente:
-            v.cliente = novo_cliente
-        if novo_produto:
-            v.produto = novo_produto
-        if nova_quantidade:
-            v.quantidade = int(nova_quantidade)
-        if novo_preco:
-            v.preco_unitario = float(novo_preco)
-        if novo_pagamento:
-            v.pagamento = novo_pagamento
-        v.recalcular_total()
-        self._salvar()
-        return v
-
-    def excluir(self, id_venda):
-        v = self.buscar_por_id(id_venda)
-        if v is None:
-            return None
-        self.vendas.remove(v)
-        self._salvar()
-        return v
-
-    def excluir_tudo(self):
-        self.vendas    = []
-        self._contador = 0
-        self._salvar()
-
-    def buscar_por_cliente(self, termo):
-        return [v for v in self.vendas if termo.lower() in v.cliente.lower()]
-
-    def buscar_por_produto(self, termo):
-        return [v for v in self.vendas if termo.lower() in v.produto.lower()]
-
-    def buscar_por_pagamento(self, termo):
-        return [v for v in self.vendas if termo.lower() in v.pagamento.lower()]
-
-    def buscar_por_data(self, data):
-        return [v for v in self.vendas if v.data == data]
-
-
-def limpar_terminal():
-    os.system("cls" if os.name == "nt" else "clear")
-
-def pausar():
-    input("\nPressione Enter para continuar...")
-
-def formatar_moeda(valor):
-    try:
-        return f"R$ {float(valor):.2f}".replace(".", ",")
-    except (ValueError, TypeError):
-        return "R$ 0,00"
-
-def separador():
-    print("-" * 90)
-
-def menu_consultar(repo: RepositorioVendas):
-    if not repo.listar():
-        print("\n--- NENHUMA VENDA REGISTRADA. ---")
-        pausar()
+def tela_alterar(pai, tabela, carregar_tabela):
+    selecionado = tabela.focus()
+    if not selecionado:
+        messagebox.showwarning("Atencao", "Selecione uma venda na tabela para alterar.")
         return
 
-    while True:
-        limpar_terminal()
-        print("\n─── CONSULTA DE VENDAS ───")
-        print("1. Por ID")
-        print("2. Por cliente")
-        print("3. Por produto")
-        print("4. Por forma de pagamento")
-        print("5. Por data")
-        print("0. Voltar\n")
+    valores = tabela.item(selecionado, "values")
+    id_venda = int(valores[0])
+    row = db_buscar_por_id(id_venda)
+    if not row:
+        messagebox.showerror("Erro", "Venda nao encontrada no banco.")
+        return
 
-        opcao = input("Opção: ").strip()
+    id_, data, cliente, produto, qtd, preco, total, pag = row
 
-        limpar_terminal()
+    win = Toplevel(pai)
+    win.title(f"Alterar Venda ID {id_venda}")
+    win.geometry("420x380")
+    win.resizable(False, False)
+    win.configure(bg="#f0f0f0")
+    win.grab_set()
 
-        if opcao == "1":
-            try:
-                id_v = int(input("ID da venda: "))
-                v = repo.buscar_por_id(id_v)
-                if v:
-                    separador()
-                    print(v)
-                    separador()
-                else:
-                    print(f"Venda ID {id_v} não encontrada.")
-            except ValueError:
-                print("ID inválido.")
+    Label(win, text=f"Alterar Venda - ID {id_venda}", font=("Arial", 13, "bold"), bg="#f0f0f0").pack(pady=10)
 
-        elif opcao == "2":
-            termo = input("Nome do cliente: ").strip()
-            resultados = repo.buscar_por_cliente(termo)
-            _exibir_lista(resultados, f"cliente '{termo}'")
+    frame = Frame(win, bg="#f0f0f0")
+    frame.pack(padx=30, pady=5, fill=X)
 
-        elif opcao == "3":
-            termo = input("Nome do produto: ").strip()
-            resultados = repo.buscar_por_produto(termo)
-            _exibir_lista(resultados, f"produto '{termo}'")
+    v_cliente  = StringVar(value=cliente)
+    v_produto  = StringVar(value=produto)
+    v_qtd      = StringVar(value=str(qtd))
+    v_preco    = StringVar(value=str(preco))
+    v_pag      = StringVar(value=pag)
 
-        elif opcao == "4":
-            print("Formas: Dinheiro | Cartão Débito | Cartão Crédito | Pix | Boleto")
-            termo = input("Forma de pagamento: ").strip()
-            resultados = repo.buscar_por_pagamento(termo)
-            _exibir_lista(resultados, f"pagamento '{termo}'")
+    rotulos  = ["Cliente", "Produto", "Quantidade", "Preco Unitario", "Pagamento"]
+    variaveis = [v_cliente, v_produto, v_qtd, v_preco, v_pag]
 
-        elif opcao == "5":
-            data = input("Data (dd/mm/aaaa): ").strip()
-            resultados = repo.buscar_por_data(data)
-            _exibir_lista(resultados, f"data '{data}'")
-
-        elif opcao == "0":
-            break
+    for i, (rot, var) in enumerate(zip(rotulos, variaveis)):
+        Label(frame, text=rot + ":", font=("Arial", 11), bg="#f0f0f0", anchor=W).grid(row=i, column=0, sticky=W, pady=4)
+        if rot == "Pagamento":
+            opcoes = ["Dinheiro", "Cartao Debito", "Cartao Credito", "Pix", "Boleto"]
+            cb = ttk.Combobox(frame, textvariable=var, values=opcoes, state="readonly", font=("Arial", 11), width=22)
+            cb.grid(row=i, column=1, sticky=W, pady=4)
         else:
-            print("Opção inválida.")
+            Entry(frame, textvariable=var, font=("Arial", 11), width=24).grid(row=i, column=1, sticky=W, pady=4)
 
-        pausar()
+    def salvar():
+        try:
+            nova_qtd   = int(v_qtd.get())
+            novo_preco = float(v_preco.get().replace(",", "."))
+        except ValueError:
+            messagebox.showerror("Erro", "Quantidade e preco devem ser numeros.", parent=win)
+            return
+        db_alterar(id_venda, v_cliente.get().strip().title(), v_produto.get().strip().title(),
+                   nova_qtd, novo_preco, v_pag.get())
+        carregar_tabela()
+        messagebox.showinfo("Sucesso", "Venda alterada com sucesso!", parent=win)
+        win.destroy()
 
-def _exibir_lista(lista, rotulo):
-    if lista:
-        separador()
-        for v in lista:
-            print(v)
-        separador()
-        print(f"Total encontrado: {len(lista)} venda(s).")
-    else:
-        print(f"Nenhuma venda encontrada para {rotulo}.")
+    Button(win, text="Salvar", font=("Arial", 11), bg="#9C27B0", fg="white",
+           width=14, command=salvar).pack(pady=15)
 
-def menu_venda():
-    repo = RepositorioVendas()
+# Excluir
 
-    while True:
-        limpar_terminal()
-        print("\n╔══════════════════════╗")
-        print("║    GESTÃO DE VENDAS  ║")
-        print("╠══════════════════════╣")
-        print("║ 1. Inserir venda     ║")
-        print("║ 2. Listar vendas     ║")
-        print("║ 3. Consultar venda   ║")
-        print("║ 4. Alterar venda     ║")
-        print("║ 5. Excluir venda     ║")
-        print("║ 6. Excluir tudo      ║")
-        print("║ 0. Sair              ║")
-        print("╚══════════════════════╝\n")
+def acao_excluir(tabela, carregar_tabela):
+    selecionado = tabela.focus()
+    if not selecionado:
+        messagebox.showwarning("Atencao", "Selecione uma venda na tabela para excluir.")
+        return
+    valores  = tabela.item(selecionado, "values")
+    id_venda = int(valores[0])
+    confirma = messagebox.askyesno("Confirmar", f"Excluir a venda ID {id_venda}?")
+    if confirma:
+        db_excluir(id_venda)
+        carregar_tabela()
+        messagebox.showinfo("Sucesso", f"Venda ID {id_venda} excluida.")
 
-        opcao = input("Opção: ").strip()
-        limpar_terminal()
+def acao_excluir_tudo(carregar_tabela):
+    confirma = messagebox.askyesno("Atencao", "Deseja excluir TODAS as vendas?\nEsta acao e irreversivel!")
+    if confirma:
+        db_excluir_tudo()
+        carregar_tabela()
+        messagebox.showinfo("Concluido", "Todas as vendas foram excluidas.")
 
-        if opcao == "1":
-            print("─── REGISTRAR VENDA ───")
-            cliente        = input("Nome do cliente: ").strip().title()
-            produto        = input("Nome do produto: ").strip().title()
-            try:
-                quantidade     = int(input("Quantidade: "))
-                preco_unitario = float(input("Preço unitário (R$): "))
-                print("Formas: Dinheiro | Cartão Débito | Cartão Crédito | Pix | Boleto")
-                pagamento = input("Forma de pagamento: ").strip().title()
-                v = repo.inserir(cliente, produto, quantidade, preco_unitario, pagamento)
-                print(f"\n✔ Venda registrada com sucesso!")
-                print(f"  ID {v.id} | {v.produto} | Total: {formatar_moeda(v.total)}")
-            except ValueError:
-                print("ERRO: Quantidade e preço devem ser números válidos.")
-            pausar()
+# Consultar
 
-        elif opcao == "2":
-            vendas = repo.listar()
-            if not vendas:
-                print("Nenhuma venda registrada.")
-            else:
-                print(f"─── LISTA DE VENDAS ({len(vendas)} registro(s)) ───")
-                separador()
-                for v in vendas:
-                    print(v)
-                separador()
-            pausar()
+def tela_consultar(pai, carregar_tabela):
+    win = Toplevel(pai)
+    win.title("Consultar Vendas")
+    win.geometry("500x200")
+    win.resizable(False, False)
+    win.configure(bg="#f0f0f0")
+    win.grab_set()
 
-        elif opcao == "3":
-            menu_consultar(repo)
+    Label(win, text="Consultar Vendas", font=("Arial", 13, "bold"), bg="#f0f0f0").pack(pady=10)
 
-        elif opcao == "4":
-            if not repo.listar():
-                print("Nenhuma venda registrada.")
-                pausar()
-                continue
-            print("─── ALTERAR VENDA ───")
-            try:
-                id_v = int(input("ID da venda: "))
-                v = repo.buscar_por_id(id_v)
-                if v is None:
-                    print(f"Venda ID {id_v} não encontrada.")
-                    pausar()
-                    continue
-                print(f"\nVenda atual:\n{v}\n")
-                print("(Deixe em branco para manter o valor atual)")
-                novo_cliente   = input(f"Novo cliente [{v.cliente}]: ").strip().title() or None
-                novo_produto   = input(f"Novo produto [{v.produto}]: ").strip().title() or None
-                nova_qtd       = input(f"Nova quantidade [{v.quantidade}]: ").strip() or None
-                novo_preco     = input(f"Novo preço unitário [{v.preco_unitario:.2f}]: ").strip() or None
-                print("Formas: Dinheiro | Cartão Débito | Cartão Crédito | Pix | Boleto")
-                novo_pag       = input(f"Nova forma de pagamento [{v.pagamento}]: ").strip().title() or None
-                atualizada = repo.alterar(id_v, novo_cliente, novo_produto, nova_qtd, novo_preco, novo_pag)
-                print(f"\n✔ Venda ID {id_v} atualizada. Novo total: {formatar_moeda(atualizada.total)}")
-            except ValueError:
-                print("ERRO: ID, quantidade e preço devem ser números válidos.")
-            pausar()
+    frame = Frame(win, bg="#f0f0f0")
+    frame.pack(padx=20, pady=5, fill=X)
 
-        elif opcao == "5":
-            if not repo.listar():
-                print("Nenhuma venda registrada.")
-                pausar()
-                continue
-            print("─── EXCLUIR VENDA ───")
-            try:
-                id_v = int(input("ID da venda para excluir: "))
-                v = repo.buscar_por_id(id_v)
-                if v is None:
-                    print(f"Venda ID {id_v} não encontrada.")
-                    pausar()
-                    continue
-                print(f"\n{v}")
-                confirma = input("\nConfirmar exclusão? (s/n): ").strip().lower()
-                if confirma == "s":
-                    motivo = input("Motivo da exclusão: ").strip()
-                    repo.excluir(id_v)
-                    print(f"✔ Venda ID {id_v} excluída. Motivo: {motivo}")
-                else:
-                    print("Exclusão cancelada.")
-            except ValueError:
-                print("ERRO: O ID deve ser um número inteiro.")
-            pausar()
+    Label(frame, text="Campo:", font=("Arial", 11), bg="#f0f0f0").grid(row=0, column=0, sticky=W, pady=6)
+    campos_busca = {"Cliente": "cliente", "Produto": "produto", "Pagamento": "pagamento"}
+    v_campo = StringVar(value="Cliente")
+    ttk.Combobox(frame, textvariable=v_campo, values=list(campos_busca.keys()),
+                 state="readonly", font=("Arial", 11), width=18).grid(row=0, column=1, sticky=W, padx=10)
 
-        elif opcao == "6":
-            total = len(repo.listar())
-            if total == 0:
-                print("Nenhuma venda registrada.")
-                pausar()
-                continue
-            print(f"─── EXCLUIR TUDO ({total} venda(s)) ───")
-            print("ATENÇÃO: esta ação é irreversível!")
-            confirma = input("Digite CONFIRMAR para prosseguir: ").strip()
-            if confirma == "CONFIRMAR":
-                repo.excluir_tudo()
-                print("✔ Todas as vendas foram excluídas.")
-            else:
-                print("Operação cancelada.")
-            pausar()
+    Label(frame, text="Termo:", font=("Arial", 11), bg="#f0f0f0").grid(row=1, column=0, sticky=W, pady=6)
+    v_termo = StringVar()
+    Entry(frame, textvariable=v_termo, font=("Arial", 11), width=22).grid(row=1, column=1, sticky=W, padx=10)
 
-        elif opcao == "0":
-            print("Saindo do módulo de Vendas. Até logo!")
-            break
+    def buscar():
+        campo_db = campos_busca[v_campo.get()]
+        termo    = v_termo.get().strip()
+        if not termo:
+            messagebox.showwarning("Atencao", "Digite um termo para buscar.", parent=win)
+            return
+        rows = db_buscar(campo_db, termo)
+        carregar_tabela(rows)
+        messagebox.showinfo("Resultado", f"{len(rows)} venda(s) encontrada(s).", parent=win)
+        win.destroy()
 
-        else:
-            print("Opção inválida.")
-            pausar()
+    def limpar():
+        carregar_tabela()
+        win.destroy()
+
+    frame_btn = Frame(win, bg="#f0f0f0")
+    frame_btn.pack(pady=12)
+    Button(frame_btn, text="Buscar",       font=("Arial", 11), bg="#FF9800", fg="white", width=12, command=buscar).grid(row=0, column=0, padx=8)
+    Button(frame_btn, text="Limpar filtro",font=("Arial", 11), bg="#607D8B", fg="white", width=14, command=limpar).grid(row=0, column=1, padx=8)
 
 
 if __name__ == "__main__":
-    menu_venda()
+    root = Tk()
+    root.withdraw()
+    criar_tabela()
+    abrir_tela_venda(root)
+    root.mainloop()
