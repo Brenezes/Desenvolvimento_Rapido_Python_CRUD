@@ -1,13 +1,21 @@
 import sqlite3
+import os
 from datetime import date
 from tkinter import *
 from tkinter import messagebox, ttk
+
+#  BANCO DE DADOS
 
 DB = "db_sistema.db"
 
 STATUS_VALIDOS = ["Pendente", "Aprovada", "Recebida", "Cancelada"]
 
-#  BANCO DE DADOS
+PASTA_ATUAL = os.path.dirname(os.path.abspath(__file__))
+CAMINHO_BANCO = os.path.join(PASTA_ATUAL, DB)
+
+# Conecta ao banco de dados, se não existir ele cria automaticamente
+conexao = sqlite3.connect(CAMINHO_BANCO)
+cursor = conexao.cursor()
 
 def conectar():
     return sqlite3.connect(DB)

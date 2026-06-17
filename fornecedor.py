@@ -3,8 +3,11 @@ import sqlite3
 from tkinter import *
 from tkinter import messagebox, ttk
 
+PASTA_ATUAL = os.path.dirname(os.path.abspath(__file__))
+CAMINHO_BANCO = os.path.join(PASTA_ATUAL, "db_sistema.db")
+
 # Conecta ao banco de dados, se não existir ele cria automaticamente
-conexao = sqlite3.connect("db_sistema.db")
+conexao = sqlite3.connect(CAMINHO_BANCO)
 cursor = conexao.cursor()
 
 # Cria a tabela de fornecedores caso ela ainda não exista no banco
@@ -51,6 +54,7 @@ class GerenciadorFornecedor:
     def carregar_fornecedores(self):
         # carrega os fornecedores do banco quando o programa inicia
         # sem isso a lista ficaria vazia toda vez que abrisse o programa
+        self.fornecedores = []
         cursor.execute("SELECT * FROM TB_FORNECEDOR")
 
         for linha in cursor.fetchall():

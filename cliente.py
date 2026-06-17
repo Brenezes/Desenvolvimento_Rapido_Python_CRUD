@@ -1,8 +1,13 @@
 import sqlite3
+import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-conexao = sqlite3.connect("db_sistema.db")
+PASTA_ATUAL = os.path.dirname(os.path.abspath(__file__))
+CAMINHO_BANCO = os.path.join(PASTA_ATUAL, "db_sistema.db")
+
+# Conecta ao banco de dados, se não existir ele cria automaticamente
+conexao = sqlite3.connect(CAMINHO_BANCO)
 cursor = conexao.cursor()
 
 # Criaçao da tabela

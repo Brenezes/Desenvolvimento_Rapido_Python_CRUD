@@ -83,7 +83,8 @@ class SistemaProduto:
 
     def __init__(self, db_name="db_sistema.db"):
         """Define o nome do arquivo do banco de dados, abre a conexao e cria a tabela inicial se necessario."""
-        self.db_name = db_name
+        pasta_atual = os.path.dirname(os.path.abspath(__file__))
+        self.db_name = os.path.join(pasta_atual, db_name)
         self.conectar()
         self.criar_tabela()
 
@@ -359,10 +360,7 @@ def menu_produtos():
             continue 
         input("\nAperte ENTER para continuar...")
 
-
-# ══════════════════════════════════════════════
 #  INTERFACE TKINTER PARA PRODUTOS
-# ══════════════════════════════════════════════
 def abrir_tela_produto(janela_pai):
     s_produto = SistemaProduto()
     
